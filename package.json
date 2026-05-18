@@ -1,0 +1,10 @@
+{
+  "name": "zaabnua-food-ordering",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "python3 server.py",
+    "check": "python3 -c \"compile(open('server.py').read(), 'server.py', 'exec')\" && node --check src/main.js && node --check src/infrastructure/api-client.js && node --check src/presentation/views/user-page.js && node --check src/presentation/views/portal-page.js && node --check src/presentation/views/merchant-management-page.js && node --check src/presentation/views/users-page.js"
+  }
+}
