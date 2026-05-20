@@ -89,6 +89,8 @@ def create_schema(conn):
           price REAL NOT NULL,
           category TEXT NOT NULL,
           available INTEGER NOT NULL DEFAULT 1,
+          image_url_1 TEXT,
+          image_url_2 TEXT,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (merchant_id) REFERENCES merchants(id) ON DELETE CASCADE
         );
@@ -129,6 +131,11 @@ def create_schema(conn):
         );
         """
     )
+    existing_menu_columns = {row["name"] for row in conn.execute("PRAGMA table_info(menu_items)")}
+    if "image_url_1" not in existing_menu_columns:
+        conn.execute("ALTER TABLE menu_items ADD COLUMN image_url_1 TEXT")
+    if "image_url_2" not in existing_menu_columns:
+        conn.execute("ALTER TABLE menu_items ADD COLUMN image_url_2 TEXT")
     conn.commit()
 
 
@@ -266,6 +273,8 @@ def menu_row(row):
         "price": row["price"],
         "category": row["category"],
         "available": bool(row["available"]),
+        "imageUrl1": row["image_url_1"],
+        "imageUrl2": row["image_url_2"],
     }
 
 
@@ -505,6 +514,21 @@ class Handler(SimpleHTTPRequestHandler):
             conn.commit()
             return self.send_json({"ok": True})
 
+        if parsed.path == "/api/user-profile":
+            delivery_address = data.get("deliveryAddress") or ""
+            conn.execute(
+                "UPDATE users SET delivery_address = ? WHERE id = ?",
+                (delivery_address, user["id"]),
+            )
+            if user["role"] == "merchant" and user["merchantId"]:
+                conn.execute(
+                    "UPDATE merchants SET address = ? WHERE id = ?",
+                    (delivery_address, user["merchantId"]),
+                )
+            conn.commit()
+            row = conn.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone()
+            return self.send_json({"user": row_to_user(row)})
+
         if parsed.path == "/api/menu-items":
             if user["role"] not in ("admin", "merchant"):
                 return self.send_json({"error": "ไม่มีสิทธิ์จัดการเมนู"}, 403)
@@ -513,14 +537,48 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({"error": "จัดการได้เฉพาะร้านของตัวเอง"}, 403)
             cursor = conn.execute(
                 """
-                INSERT INTO menu_items (merchant_id, name, description, price, category, available)
-                VALUES (?, ?, ?, ?, ?, 1)
+                INSERT INTO menu_items (merchant_id, name, description, price, category, available, image_url_1, image_url_2)
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?)
                 """,
-                (merchant_id, data.get("name"), data.get("description"), float(data.get("price")), data.get("category") or "เมนูใหม่"),
+                (
+                    merchant_id,
+                    data.get("name"),
+                    data.get("description"),
+                    float(data.get("price")),
+                    data.get("category") or "เมนูใหม่",
+                    data.get("imageUrl1") or None,
+                    data.get("imageUrl2") or None,
+                ),
             )
             conn.commit()
             item = conn.execute("SELECT * FROM menu_items WHERE id = ?", (cursor.lastrowid,)).fetchone()
             return self.send_json({"menuItem": menu_row(item)}, 201)
+
+        if parsed.path == "/api/merchant-profile":
+            if user["role"] not in ("admin", "merchant"):
+                return self.send_json({"error": "ไม่มีสิทธิ์แก้ไขร้านค้า"}, 403)
+            merchant_id = int(data.get("id") or user["merchantId"] or 0)
+            if user["role"] == "merchant" and merchant_id != user["merchantId"]:
+                return self.send_json({"error": "แก้ไขได้เฉพาะร้านของตัวเอง"}, 403)
+            conn.execute(
+                """
+                UPDATE merchants
+                SET name = ?, category = ?, address = ?, location = ?, status = ?, eta = ?
+                WHERE id = ?
+                """,
+                (
+                    data.get("name"),
+                    data.get("category"),
+                    data.get("address"),
+                    data.get("location"),
+                    data.get("status") or "open",
+                    data.get("eta") or "25-35 นาที",
+                    merchant_id,
+                ),
+            )
+            conn.commit()
+            merchant = conn.execute("SELECT * FROM merchants WHERE id = ?", (merchant_id,)).fetchone()
+            return self.send_json({"merchant": merchant_row(merchant)})
 
         if parsed.path == "/api/checkout":
             items = data.get("items", [])

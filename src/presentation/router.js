@@ -14,6 +14,11 @@ export function readRoute() {
 
 export function syncRoute() {
   appState.route = readRoute();
+  if ([Roles.ADMIN, Roles.MERCHANT].includes(appState.user?.role) && appState.route === "user") {
+    window.location.hash = "#/portal";
+    appState.route = "portal";
+    return false;
+  }
   const allowedRoles = protectedRoutes[appState.route];
   if (allowedRoles && !allowedRoles.includes(appState.user?.role)) {
     window.location.hash = "#/user";

@@ -35,6 +35,14 @@ export function createApiClient(authRepository) {
       method: "POST",
       body: JSON.stringify(item)
     }),
+    updateMerchant: (merchant) => request("/api/merchant-profile", {
+      method: "POST",
+      body: JSON.stringify(merchant)
+    }),
+    updateUserProfile: (profile) => request("/api/user-profile", {
+      method: "POST",
+      body: JSON.stringify(profile)
+    }),
     checkout: (items, paymentMethod) => request("/api/checkout", {
       method: "POST",
       body: JSON.stringify({ items, paymentMethod })

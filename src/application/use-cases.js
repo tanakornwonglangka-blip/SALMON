@@ -20,6 +20,11 @@ export function createUseCases({ api, authRepository, paymentGateway }) {
     getMerchantManagementData: () => api.getMerchantManagementData(),
     getUsers: () => api.getUsers(),
     saveMenuItem: (item) => api.saveMenuItem(item),
+    updateMerchant: (merchant) => api.updateMerchant(merchant),
+    async updateUserProfile(profile) {
+      const payload = await api.updateUserProfile(profile);
+      return authRepository.updateUser(payload.user);
+    },
     async searchRestaurants(query = "") {
       const payload = await api.searchRestaurants(query);
       return payload.restaurants;

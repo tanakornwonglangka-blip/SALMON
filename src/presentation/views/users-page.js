@@ -6,7 +6,6 @@ export function usersPage({ users }, currentUser) {
         <h1>${currentUser.role === "admin" ? "ผู้ใช้ทั้งหมดในระบบ" : "ข้อมูลบัญชีของฉัน"}</h1>
         <p>แสดงข้อมูลบัญชี บทบาท อีเมล และที่อยู่สำหรับจัดส่ง โดยไม่แสดงรหัสผ่านหรือ hash</p>
       </div>
-      <button class="primary-button" data-action="open-register">สมัครสมาชิก</button>
     </section>
 
     <section class="data-panel">

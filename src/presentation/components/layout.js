@@ -3,16 +3,18 @@ import { appState } from "../state.js";
 
 export function shell(content) {
   const user = appState.user;
+  const cartCount = appState.cart.reduce((total, item) => total + item.quantity, 0);
+  const showCartButton = appState.route === "user" && user?.role === Roles.USER;
   const navItems = [
-    { route: "user", label: "สั่งอาหาร", roles: [Roles.ADMIN, Roles.MERCHANT, Roles.USER, null] },
+    { route: "user", label: "สั่งอาหาร", roles: [Roles.USER, null] },
     { route: "portal", label: "ภาพรวม", roles: [Roles.ADMIN, Roles.MERCHANT] },
-    { route: "merchant", label: "จัดการร้าน", roles: [Roles.ADMIN, Roles.MERCHANT] },
-    { route: "users", label: "ผู้ใช้", roles: [Roles.ADMIN, Roles.MERCHANT, Roles.USER] }
+    { route: "merchant", label: "จัดการร้าน", roles: [Roles.ADMIN, Roles.MERCHANT] }
   ].filter((item) => item.roles.includes(user?.role ?? null));
+  const homeRoute = [Roles.ADMIN, Roles.MERCHANT].includes(user?.role) ? "portal" : "user";
 
   return `
     <header class="topbar">
-      <a class="brand" href="#/user" aria-label="กลับหน้าหลัก ZaabNua">
+      <a class="brand" href="#/${homeRoute}" aria-label="กลับหน้าหลัก ZaabNua">
         <span class="brand-mark">Z</span>
         <span>
           <strong>ZaabNua</strong>
@@ -25,8 +27,18 @@ export function shell(content) {
         `).join("")}
       </nav>
       <div class="account-chip">
+        ${showCartButton ? `
+          <button class="cart-icon-button" type="button" data-action="open-cart" aria-label="เปิดตะกร้าสินค้า">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6.4 6.5h14.1l-1.6 8.1a2 2 0 0 1-2 1.6H9.2a2 2 0 0 1-2-1.6L5.6 3.8H3.5" />
+              <path d="M9.6 20.2h.1" />
+              <path d="M17 20.2h.1" />
+            </svg>
+            <span>${cartCount}</span>
+          </button>
+        ` : ""}
         ${user ? `
-          <span>${user.name}</span>
+          <button class="account-name" data-action="open-user-detail">${user.name}</button>
           <button class="ghost-button" data-action="logout">ออกจากระบบ</button>
         ` : `
           <button class="ghost-button compact" data-action="open-register">สมัครสมาชิก</button>
@@ -71,11 +83,11 @@ export function registerModal(error = "") {
           <label><input type="radio" name="role" value="user" checked /> ผู้สั่งอาหาร</label>
           <label><input type="radio" name="role" value="merchant" /> ร้านค้า</label>
         </div>
+        <label>อีเมล <input name="email" type="email" autocomplete="email" required /></label>
         <div class="form-row">
-          <label>อีเมล <input name="email" type="email" autocomplete="email" required /></label>
           <label>ชื่อผู้ใช้ <input name="username" autocomplete="username" required /></label>
+          <label>รหัสผ่าน <input name="password" type="password" autocomplete="new-password" required /></label>
         </div>
-        <label>รหัสผ่าน <input name="password" type="password" autocomplete="new-password" required /></label>
         <div class="form-row">
           <label>ชื่อ <input name="firstName" required /></label>
           <label>นามสกุล <input name="lastName" required /></label>
@@ -83,14 +95,15 @@ export function registerModal(error = "") {
         <label>ที่อยู่สำหรับจัดส่งหรือที่อยู่ร้าน <textarea name="deliveryAddress" required></textarea></label>
         <div class="merchant-fields">
           <label>ชื่อร้าน <input name="shopName" /></label>
-          <label>ที่อยู่ร้าน <textarea name="shopAddress"></textarea></label>
           <div class="form-row">
             <label>ประเภทร้าน <input name="category" value="ร้านอาหาร" /></label>
             <label>ย่าน <input name="location" value="กรุงเทพฯ" /></label>
           </div>
         </div>
-        <button class="primary-button" type="submit">สมัครสมาชิก</button>
-        <button class="ghost-button" type="button" data-action="close-register">ปิด</button>
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" data-action="close-register">ปิด</button>
+          <button class="primary-button" type="submit">สมัครสมาชิก</button>
+        </div>
       </form>
     </div>
   `;

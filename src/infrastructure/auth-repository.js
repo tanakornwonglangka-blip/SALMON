@@ -6,6 +6,13 @@ export function createAuthRepository() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
       return session.user;
     },
+    updateUser(user) {
+      const session = this.getSession();
+      if (!session) return null;
+      const nextSession = { ...session, user };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession));
+      return user;
+    },
     getToken() {
       return this.getSession()?.token ?? "";
     },
