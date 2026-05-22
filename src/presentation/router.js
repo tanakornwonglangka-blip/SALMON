@@ -4,12 +4,14 @@ import { appState } from "./state.js";
 const protectedRoutes = {
   portal: [Roles.ADMIN, Roles.MERCHANT],
   merchant: [Roles.ADMIN, Roles.MERCHANT],
-  users: [Roles.ADMIN, Roles.MERCHANT, Roles.USER]
+  users: [Roles.ADMIN, Roles.MERCHANT, Roles.USER],
+  history: [Roles.USER],
+  "payment-result": [Roles.USER]
 };
 
 export function readRoute() {
-  const route = window.location.hash.replace("#/", "") || "user";
-  return ["user", "portal", "merchant", "users"].includes(route) ? route : "user";
+  const route = (window.location.hash.replace("#/", "") || "user").split("?")[0];
+  return ["user", "portal", "merchant", "users", "history", "payment-result"].includes(route) ? route : "user";
 }
 
 export function syncRoute() {

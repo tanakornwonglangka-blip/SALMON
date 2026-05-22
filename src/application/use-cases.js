@@ -19,7 +19,10 @@ export function createUseCases({ api, authRepository, paymentGateway }) {
     getPortalData: () => api.getPortalData(),
     getMerchantManagementData: () => api.getMerchantManagementData(),
     getUsers: () => api.getUsers(),
+    getHistory: () => api.getHistory(),
     saveMenuItem: (item) => api.saveMenuItem(item),
+    deleteMenuItem: (id) => api.deleteMenuItem(id),
+    saveSubMerchant: (merchant) => api.saveSubMerchant(merchant),
     updateMerchant: (merchant) => api.updateMerchant(merchant),
     async updateUserProfile(profile) {
       const payload = await api.updateUserProfile(profile);
@@ -33,6 +36,8 @@ export function createUseCases({ api, authRepository, paymentGateway }) {
       if (!cartItems.length) throw new Error("ตะกร้าสินค้าว่างอยู่");
       calculateCartTotal(cartItems);
       return paymentGateway.pay(cartItems, paymentMethod);
-    }
+    },
+    checkPaymentRedirect: (url) => api.checkPaymentRedirect(url),
+    getPaymentStatus: (transactionId) => api.getPaymentStatus(transactionId)
   };
 }

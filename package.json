@@ -4,7 +4,20 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "python3 server.py",
-    "check": "python3 -c \"compile(open('server.py').read(), 'server.py', 'exec')\" && node --check src/main.js && node --check src/infrastructure/api-client.js && node --check src/presentation/views/user-page.js && node --check src/presentation/views/portal-page.js && node --check src/presentation/views/merchant-management-page.js && node --check src/presentation/views/users-page.js"
+    "dev": "tsx src/server/index.ts",
+    "build": "tsc",
+    "start": "node dist/server/index.js",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/application/use-cases.js && node --check src/infrastructure/api-client.js && node --check src/presentation/router.js && node --check src/presentation/components/layout.js && node --check src/presentation/views/user-page.js && node --check src/presentation/views/portal-page.js && node --check src/presentation/views/merchant-management-page.js && node --check src/presentation/views/users-page.js && node --check src/presentation/views/history-page.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "nanoid": "^5.1.11"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.9.1",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3"
   }
 }

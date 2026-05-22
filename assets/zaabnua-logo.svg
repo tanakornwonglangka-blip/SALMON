@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 110" role="img" aria-labelledby="title desc">
+  <title id="title">ZaabNua</title>
+  <desc id="desc">ZaabNua food ordering logo with transparent background.</desc>
+  <g transform="translate(8 8)">
+    <circle cx="47" cy="47" r="39" fill="#2b2520"/>
+    <circle cx="47" cy="47" r="34" fill="none" stroke="#6b5947" stroke-width="4"/>
+    <path d="M27 40c7-9 33-9 40 0l8 21c-11 13-43 13-56 0z" fill="#f47b20" stroke="#4a2b18" stroke-width="4" stroke-linejoin="round"/>
+    <ellipse cx="47" cy="41" rx="25" ry="12" fill="#f9a23a" stroke="#4a2b18" stroke-width="4"/>
+    <ellipse cx="47" cy="42" rx="19" ry="7" fill="#d94714"/>
+    <path d="M36 15c-2 10 8 11 3 21 11-7 13-17 4-26-1 7-5 8-7 5z" fill="#ff7a1a"/>
+    <path d="M51 8c-2 12 10 14 5 27 13-9 15-22 4-32-1 8-7 9-9 5z" fill="#ff4c00"/>
+    <path d="M65 18c-1 8 6 9 3 17 9-6 11-15 3-23-1 6-4 7-6 6z" fill="#ffb02e"/>
+    <path d="M30 62c-4 9-2 17 6 24 0-8 7-12 11-17" fill="none" stroke="#ff7a1a" stroke-width="5" stroke-linecap="round"/>
+    <path d="M61 69c9 4 12 10 10 18 9-7 11-16 5-26" fill="none" stroke="#ff7a1a" stroke-width="5" stroke-linecap="round"/>
+    <path d="M38 44c8-5 18-5 27 0" fill="none" stroke="#ffd15a" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="36" cy="42" r="2.2" fill="#ffd966"/>
+    <circle cx="47" cy="46" r="2.2" fill="#67aa24"/>
+    <circle cx="58" cy="42" r="2.2" fill="#ffd966"/>
+    <path d="M48 36c5-7 13-7 17-1-6 4-13 5-17 1z" fill="#52a414" stroke="#28600b" stroke-width="2"/>
+  </g>
+  <text x="98" y="68" fill="#f04b00" font-family="Inter, Arial Black, Arial, sans-serif" font-size="42" font-weight="900">Zaab</text>
+  <text x="212" y="68" fill="#57a20a" font-family="Inter, Arial Black, Arial, sans-serif" font-size="42" font-weight="900">Nua</text>
+</svg>

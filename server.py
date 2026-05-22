@@ -1,6 +1,8 @@
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 import base64
 import hashlib
 import hmac
@@ -28,6 +30,25 @@ load_env()
 DB_PATH = ROOT / os.environ.get("DB_PATH", "data/zaabnua.db")
 APP_SECRET = os.environ.get("APP_SECRET", "local-dev-secret")
 PBKDF2_ITERATIONS = int(os.environ.get("PBKDF2_ITERATIONS", "120000"))
+OCTOPUS_PAYMENT_URL = "https://octopus-unify-sit.digipay.dev/v2/payment"
+OCTOPUS_PAYMENT_HEADERS = {
+    "X-API-ID": "g76A1cSu6tqPQVeJUZS4kuJwlmtURwQ_AqmzTTPNB3c",
+    "X-API-Key": "6IGGa0clqjd5_pEAZvsjbmD1PSumR1Xk8OHpzMszAUo",
+    "X-Partner-ID": "1726728694",
+    "X-Content-Signature": "4l2xrUca6nnOCYksuU07KBn0ZpuWa+o0qLvrPIer2Xs=",
+    "Accept-Language": "en",
+    "Content-Type": "application/json",
+}
+OCTOPUS_PAYMENT_BODY = {
+    "mid": "4012375676",
+    "order_id": "381a49d7e2914d7ea4d0d97b60a26fb7",
+    "description": "ZabbNua Payment Test",
+    "amount": 3500,
+    "url_redirect": "https://www.ihiroshi.com",
+    "url_notify": "https://www.ihiroshi.com",
+    "customer_email": "tanakorn@digio.asia",
+    "tokenize": False,
+}
 
 
 def connect_db():
@@ -56,14 +77,18 @@ def create_schema(conn):
         """
         CREATE TABLE IF NOT EXISTS merchants (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          parent_merchant_id INTEGER,
           name TEXT NOT NULL,
           category TEXT NOT NULL,
           address TEXT NOT NULL,
           location TEXT NOT NULL,
+          latitude REAL,
+          longitude REAL,
           rating REAL NOT NULL DEFAULT 4.5,
           status TEXT NOT NULL DEFAULT 'open',
           eta TEXT NOT NULL DEFAULT '25-35 นาที',
-          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (parent_merchant_id) REFERENCES merchants(id)
         );
 
         CREATE TABLE IF NOT EXISTS users (
@@ -76,6 +101,8 @@ def create_schema(conn):
           first_name TEXT NOT NULL,
           last_name TEXT NOT NULL,
           delivery_address TEXT,
+          latitude REAL,
+          longitude REAL,
           merchant_id INTEGER,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (merchant_id) REFERENCES merchants(id)
@@ -89,6 +116,7 @@ def create_schema(conn):
           price REAL NOT NULL,
           category TEXT NOT NULL,
           available INTEGER NOT NULL DEFAULT 1,
+          deleted INTEGER NOT NULL DEFAULT 0,
           image_url_1 TEXT,
           image_url_2 TEXT,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -101,6 +129,8 @@ def create_schema(conn):
           user_id INTEGER,
           customer_name TEXT NOT NULL,
           delivery_address TEXT,
+          delivery_latitude REAL,
+          delivery_longitude REAL,
           payment_method TEXT NOT NULL CHECK(payment_method IN ('เงินสด', 'QR PromptPay', 'Card')),
           subtotal REAL NOT NULL,
           delivery_fee REAL NOT NULL DEFAULT 0,
@@ -131,11 +161,30 @@ def create_schema(conn):
         );
         """
     )
+    existing_merchant_columns = {row["name"] for row in conn.execute("PRAGMA table_info(merchants)")}
+    if "parent_merchant_id" not in existing_merchant_columns:
+        conn.execute("ALTER TABLE merchants ADD COLUMN parent_merchant_id INTEGER")
+    if "latitude" not in existing_merchant_columns:
+        conn.execute("ALTER TABLE merchants ADD COLUMN latitude REAL")
+    if "longitude" not in existing_merchant_columns:
+        conn.execute("ALTER TABLE merchants ADD COLUMN longitude REAL")
+    existing_user_columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+    if "latitude" not in existing_user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN latitude REAL")
+    if "longitude" not in existing_user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN longitude REAL")
     existing_menu_columns = {row["name"] for row in conn.execute("PRAGMA table_info(menu_items)")}
     if "image_url_1" not in existing_menu_columns:
         conn.execute("ALTER TABLE menu_items ADD COLUMN image_url_1 TEXT")
     if "image_url_2" not in existing_menu_columns:
         conn.execute("ALTER TABLE menu_items ADD COLUMN image_url_2 TEXT")
+    if "deleted" not in existing_menu_columns:
+        conn.execute("ALTER TABLE menu_items ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
+    existing_transaction_columns = {row["name"] for row in conn.execute("PRAGMA table_info(transactions)")}
+    if "delivery_latitude" not in existing_transaction_columns:
+        conn.execute("ALTER TABLE transactions ADD COLUMN delivery_latitude REAL")
+    if "delivery_longitude" not in existing_transaction_columns:
+        conn.execute("ALTER TABLE transactions ADD COLUMN delivery_longitude REAL")
     conn.commit()
 
 
@@ -145,30 +194,30 @@ def seed_database(conn):
 
     seed_password = os.environ.get("SEED_PASSWORD", "password")
     merchants = [
-        ("ครัวสมใจ", "อาหารอีสาน", "88/12 ถนนสุขุมวิท แขวงคลองตัน เขตวัฒนา กรุงเทพฯ 10110", "อโศก", 4.8, "open", "20-30 นาที"),
-        ("แซ่บสเตชั่น", "ส้มตำและปิ้งย่าง", "12/7 ถนนลาดพร้าว แขวงจอมพล เขตจตุจักร กรุงเทพฯ 10900", "ลาดพร้าว", 4.7, "open", "25-35 นาที"),
-        ("นัวโบวล์", "ข้าวหน้าเนื้อ", "55 ซอยทองหล่อ 10 เขตวัฒนา กรุงเทพฯ 10110", "ทองหล่อ", 4.6, "busy", "35-45 นาที"),
+        ("ครัวสมใจ", "อาหารอีสาน", "88/12 ถนนสุขุมวิท แขวงคลองตัน เขตวัฒนา กรุงเทพฯ 10110", "อโศก", 13.7371, 100.5604, 4.8, "open", "20-30 นาที"),
+        ("แซ่บสเตชั่น", "ส้มตำและปิ้งย่าง", "12/7 ถนนลาดพร้าว แขวงจอมพล เขตจตุจักร กรุงเทพฯ 10900", "ลาดพร้าว", 13.8163, 100.5617, 4.7, "open", "25-35 นาที"),
+        ("นัวโบวล์", "ข้าวหน้าเนื้อ", "55 ซอยทองหล่อ 10 เขตวัฒนา กรุงเทพฯ 10110", "ทองหล่อ", 13.7307, 100.5827, 4.6, "busy", "35-45 นาที"),
     ]
     conn.executemany(
-        "INSERT INTO merchants (name, category, address, location, rating, status, eta) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO merchants (name, category, address, location, latitude, longitude, rating, status, eta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         merchants,
     )
 
     merchant_ids = {row["name"]: row["id"] for row in conn.execute("SELECT id, name FROM merchants")}
 
     users = [
-        ("admin", "admin@zaabnua.test", "admin", "ณรา", "แอดมิน", "อาคาร ZaabNua ชั้น 8 กรุงเทพฯ", None),
-        ("merchant", "merchant@zaabnua.test", "merchant", "สมใจ", "สุขครัว", "88/12 ถนนสุขุมวิท กรุงเทพฯ", merchant_ids["ครัวสมใจ"]),
-        ("user", "user@zaabnua.test", "user", "มะลิ", "ใจดี", "24/6 ซอยอารีย์ 2 แขวงพญาไท กรุงเทพฯ", None),
+        ("admin", "admin@zaabnua.test", "admin", "ณรา", "แอดมิน", "อาคาร ZaabNua ชั้น 8 กรุงเทพฯ", 13.7563, 100.5018, None),
+        ("merchant", "merchant@zaabnua.test", "merchant", "สมใจ", "สุขครัว", "88/12 ถนนสุขุมวิท กรุงเทพฯ", 13.7371, 100.5604, merchant_ids["ครัวสมใจ"]),
+        ("user", "user@zaabnua.test", "user", "มะลิ", "ใจดี", "24/6 ซอยอารีย์ 2 แขวงพญาไท กรุงเทพฯ", 13.7797, 100.5448, None),
     ]
-    for username, email, role, first_name, last_name, address, merchant_id in users:
+    for username, email, role, first_name, last_name, address, latitude, longitude, merchant_id in users:
         salt, hashed = hash_password(seed_password)
         conn.execute(
             """
-            INSERT INTO users (username, password_hash, password_salt, email, role, first_name, last_name, delivery_address, merchant_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (username, password_hash, password_salt, email, role, first_name, last_name, delivery_address, latitude, longitude, merchant_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (username, hashed, salt, email, role, first_name, last_name, address, merchant_id),
+            (username, hashed, salt, email, role, first_name, last_name, address, latitude, longitude, merchant_id),
         )
 
     menus = [
@@ -195,10 +244,10 @@ def seed_database(conn):
         subtotal = sum(item_lookup[name]["price"] * quantity for name, quantity in items)
         tx = conn.execute(
             """
-            INSERT INTO transactions (merchant_id, user_id, customer_name, delivery_address, payment_method, subtotal, delivery_fee, total_amount, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'paid')
+            INSERT INTO transactions (merchant_id, user_id, customer_name, delivery_address, delivery_latitude, delivery_longitude, payment_method, subtotal, delivery_fee, total_amount, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid')
             """,
-            (merchant_id, order_user_id, customer, address, payment_method, subtotal, 20, subtotal + 20),
+            (merchant_id, order_user_id, customer, address, 13.7563, 100.5018, payment_method, subtotal, 20, subtotal + 20),
         )
         transaction_id = tx.lastrowid
         for name, quantity in items:
@@ -231,6 +280,8 @@ def row_to_user(row):
         "lastName": row["last_name"],
         "name": f"{row['first_name']} {row['last_name']}",
         "deliveryAddress": row["delivery_address"],
+        "latitude": row["latitude"],
+        "longitude": row["longitude"],
         "merchantId": row["merchant_id"],
     }
 
@@ -254,10 +305,13 @@ def current_user(conn, headers):
 def merchant_row(row):
     return {
         "id": row["id"],
+        "parentMerchantId": row["parent_merchant_id"],
         "name": row["name"],
         "category": row["category"],
         "address": row["address"],
         "location": row["location"],
+        "latitude": row["latitude"],
+        "longitude": row["longitude"],
         "rating": row["rating"],
         "status": row["status"],
         "eta": row["eta"],
@@ -295,6 +349,8 @@ def transaction_row(conn, row):
         "merchantName": row["merchant_name"],
         "customer": row["customer_name"],
         "deliveryAddress": row["delivery_address"],
+        "deliveryLatitude": row["delivery_latitude"],
+        "deliveryLongitude": row["delivery_longitude"],
         "paymentMethod": row["payment_method"],
         "subtotal": row["subtotal"],
         "deliveryFee": row["delivery_fee"],
@@ -303,6 +359,59 @@ def transaction_row(conn, row):
         "createdAt": row["created_at"],
         "items": items,
     }
+
+
+def merchant_scope_ids(conn, user):
+    if user["role"] == "admin":
+        return [row["id"] for row in conn.execute("SELECT id FROM merchants")]
+    if user["role"] != "merchant" or not user["merchantId"]:
+        return []
+    return [
+        row["id"]
+        for row in conn.execute(
+            "SELECT id FROM merchants WHERE id = ? OR parent_merchant_id = ?",
+            (user["merchantId"], user["merchantId"]),
+        )
+    ]
+
+
+def bind_id_list(ids):
+    return ",".join("?" for _ in ids)
+
+
+def parse_optional_float(value):
+    if value in (None, ""):
+        return None
+    return float(value)
+
+
+def parse_json_bytes(raw):
+    if not raw:
+        return {}
+    text = raw.decode("utf-8", errors="replace")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return {"error": text}
+
+
+def octopus_error_message(payload):
+    if isinstance(payload, dict):
+        return payload.get("error") or payload.get("res_desc") or payload.get("message") or payload.get("res_code") or json.dumps(payload, ensure_ascii=False)
+    return str(payload)
+
+
+def create_octopus_payment():
+    body = json.dumps(OCTOPUS_PAYMENT_BODY, separators=(",", ":")).encode("utf-8")
+    request = Request(OCTOPUS_PAYMENT_URL, data=body, headers=OCTOPUS_PAYMENT_HEADERS, method="POST")
+    try:
+        with urlopen(request, timeout=20) as response:
+            payload = parse_json_bytes(response.read())
+            return response.status, payload
+    except HTTPError as error:
+        return error.code, parse_json_bytes(error.read())
+    except URLError as error:
+        return 0, {"error": str(error.reason)}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -368,7 +477,7 @@ class Handler(SimpleHTTPRequestHandler):
                     """
                     SELECT DISTINCT m.* FROM merchants m
                     LEFT JOIN menu_items mi ON mi.merchant_id = m.id
-                    WHERE m.name LIKE ? OR m.category LIKE ? OR m.location LIKE ? OR m.address LIKE ? OR mi.name LIKE ?
+                    WHERE m.name LIKE ? OR m.category LIKE ? OR m.location LIKE ? OR m.address LIKE ? OR (mi.deleted = 0 AND mi.name LIKE ?)
                     ORDER BY m.rating DESC
                     """,
                     (like, like, like, like, like),
@@ -378,7 +487,7 @@ class Handler(SimpleHTTPRequestHandler):
             payload = []
             for merchant in merchants:
                 items = conn.execute(
-                    "SELECT * FROM menu_items WHERE merchant_id = ? AND available = 1 ORDER BY id",
+                    "SELECT * FROM menu_items WHERE merchant_id = ? AND available = 1 AND deleted = 0 ORDER BY id",
                     (merchant["id"],),
                 ).fetchall()
                 payload.append({**merchant_row(merchant), "menuItems": [menu_row(item) for item in items]})
@@ -399,15 +508,17 @@ class Handler(SimpleHTTPRequestHandler):
                     """
                 ).fetchall()
             else:
-                merchants = conn.execute("SELECT * FROM merchants WHERE id = ?", (user["merchantId"],)).fetchall()
+                merchant_ids = merchant_scope_ids(conn, user)
+                placeholders = bind_id_list(merchant_ids)
+                merchants = conn.execute(f"SELECT * FROM merchants WHERE id IN ({placeholders}) ORDER BY parent_merchant_id, id", merchant_ids).fetchall()
                 transactions = conn.execute(
                     """
                     SELECT t.*, m.name merchant_name FROM transactions t
                     JOIN merchants m ON m.id = t.merchant_id
-                    WHERE t.merchant_id = ?
+                    WHERE t.merchant_id IN ({})
                     ORDER BY t.id DESC
-                    """,
-                    (user["merchantId"],),
+                    """.format(placeholders),
+                    merchant_ids,
                 ).fetchall()
             return self.send_json({
                 "merchants": [merchant_row(row) for row in merchants],
@@ -417,14 +528,28 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/merchant-management":
             if user["role"] == "admin":
                 merchants = conn.execute("SELECT * FROM merchants ORDER BY id").fetchall()
-                items = conn.execute("SELECT * FROM menu_items ORDER BY id DESC").fetchall()
+                items = conn.execute("SELECT * FROM menu_items WHERE deleted = 0 ORDER BY id DESC").fetchall()
             else:
-                merchants = conn.execute("SELECT * FROM merchants WHERE id = ?", (user["merchantId"],)).fetchall()
-                items = conn.execute("SELECT * FROM menu_items WHERE merchant_id = ? ORDER BY id DESC", (user["merchantId"],)).fetchall()
+                merchant_ids = merchant_scope_ids(conn, user)
+                placeholders = bind_id_list(merchant_ids)
+                merchants = conn.execute(f"SELECT * FROM merchants WHERE id IN ({placeholders}) ORDER BY parent_merchant_id, id", merchant_ids).fetchall()
+                items = conn.execute(f"SELECT * FROM menu_items WHERE merchant_id IN ({placeholders}) AND deleted = 0 ORDER BY id DESC", merchant_ids).fetchall()
             return self.send_json({
                 "merchants": [merchant_row(row) for row in merchants],
                 "menuItems": [menu_row(row) for row in items],
             })
+
+        if parsed.path == "/api/history":
+            transactions = conn.execute(
+                """
+                SELECT t.*, m.name merchant_name FROM transactions t
+                JOIN merchants m ON m.id = t.merchant_id
+                WHERE t.user_id = ?
+                ORDER BY t.id DESC
+                """,
+                (user["id"],),
+            ).fetchall()
+            return self.send_json({"transactions": [transaction_row(conn, row) for row in transactions]})
 
         if parsed.path == "/api/users":
             if user["role"] == "admin":
@@ -485,8 +610,8 @@ class Handler(SimpleHTTPRequestHandler):
             salt, hashed = hash_password(data["password"])
             user_row = conn.execute(
                 """
-                INSERT INTO users (username, password_hash, password_salt, email, role, first_name, last_name, delivery_address, merchant_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users (username, password_hash, password_salt, email, role, first_name, last_name, delivery_address, latitude, longitude, merchant_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     data["username"],
@@ -497,6 +622,8 @@ class Handler(SimpleHTTPRequestHandler):
                     data.get("firstName") or data["username"],
                     data.get("lastName") or "-",
                     data.get("deliveryAddress") or data.get("shopAddress") or "",
+                    parse_optional_float(data.get("latitude")),
+                    parse_optional_float(data.get("longitude")),
                     merchant_id,
                 ),
             )
@@ -516,14 +643,23 @@ class Handler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/user-profile":
             delivery_address = data.get("deliveryAddress") or ""
+            first_name = data.get("firstName") or user["firstName"]
+            last_name = data.get("lastName") or user["lastName"]
+            email = data.get("email") or user["email"]
+            latitude = parse_optional_float(data.get("latitude"))
+            longitude = parse_optional_float(data.get("longitude"))
             conn.execute(
-                "UPDATE users SET delivery_address = ? WHERE id = ?",
-                (delivery_address, user["id"]),
+                """
+                UPDATE users
+                SET first_name = ?, last_name = ?, email = ?, delivery_address = ?, latitude = ?, longitude = ?
+                WHERE id = ?
+                """,
+                (first_name, last_name, email, delivery_address, latitude, longitude, user["id"]),
             )
             if user["role"] == "merchant" and user["merchantId"]:
                 conn.execute(
-                    "UPDATE merchants SET address = ? WHERE id = ?",
-                    (delivery_address, user["merchantId"]),
+                    "UPDATE merchants SET address = ?, latitude = ?, longitude = ? WHERE id = ?",
+                    (delivery_address, latitude, longitude, user["merchantId"]),
                 )
             conn.commit()
             row = conn.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone()
@@ -533,12 +669,43 @@ class Handler(SimpleHTTPRequestHandler):
             if user["role"] not in ("admin", "merchant"):
                 return self.send_json({"error": "ไม่มีสิทธิ์จัดการเมนู"}, 403)
             merchant_id = int(data.get("merchantId"))
-            if user["role"] == "merchant" and merchant_id != user["merchantId"]:
+            if user["role"] == "merchant" and merchant_id not in merchant_scope_ids(conn, user):
                 return self.send_json({"error": "จัดการได้เฉพาะร้านของตัวเอง"}, 403)
+            item_id = data.get("id")
+            available = 1 if str(data.get("available", "true")).lower() in ("1", "true", "on", "yes") else 0
+            image_url_1 = data.get("imageUrl1") or None
+            image_url_2 = data.get("imageUrl2") or None
+            if item_id:
+                existing = conn.execute("SELECT * FROM menu_items WHERE id = ? AND deleted = 0", (int(item_id),)).fetchone()
+                if not existing:
+                    return self.send_json({"error": "ไม่พบเมนูอาหาร"}, 404)
+                if user["role"] == "merchant" and existing["merchant_id"] not in merchant_scope_ids(conn, user):
+                    return self.send_json({"error": "จัดการได้เฉพาะร้านของตัวเอง"}, 403)
+                conn.execute(
+                    """
+                    UPDATE menu_items
+                    SET merchant_id = ?, name = ?, description = ?, price = ?, category = ?, available = ?, image_url_1 = ?, image_url_2 = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        merchant_id,
+                        data.get("name"),
+                        data.get("description"),
+                        float(data.get("price")),
+                        data.get("category") or "เมนูใหม่",
+                        available,
+                        image_url_1 if image_url_1 is not None else existing["image_url_1"],
+                        image_url_2 if image_url_2 is not None else existing["image_url_2"],
+                        int(item_id),
+                    ),
+                )
+                conn.commit()
+                item = conn.execute("SELECT * FROM menu_items WHERE id = ?", (int(item_id),)).fetchone()
+                return self.send_json({"menuItem": menu_row(item)})
             cursor = conn.execute(
                 """
                 INSERT INTO menu_items (merchant_id, name, description, price, category, available, image_url_1, image_url_2)
-                VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     merchant_id,
@@ -546,24 +713,41 @@ class Handler(SimpleHTTPRequestHandler):
                     data.get("description"),
                     float(data.get("price")),
                     data.get("category") or "เมนูใหม่",
-                    data.get("imageUrl1") or None,
-                    data.get("imageUrl2") or None,
+                    available,
+                    image_url_1,
+                    image_url_2,
                 ),
             )
             conn.commit()
             item = conn.execute("SELECT * FROM menu_items WHERE id = ?", (cursor.lastrowid,)).fetchone()
             return self.send_json({"menuItem": menu_row(item)}, 201)
 
+        if parsed.path == "/api/menu-items/delete":
+            if user["role"] not in ("admin", "merchant"):
+                return self.send_json({"error": "ไม่มีสิทธิ์จัดการเมนู"}, 403)
+            item_id = int(data.get("id") or 0)
+            existing = conn.execute("SELECT * FROM menu_items WHERE id = ? AND deleted = 0", (item_id,)).fetchone()
+            if not existing:
+                return self.send_json({"error": "ไม่พบเมนูอาหาร"}, 404)
+            if user["role"] == "merchant" and existing["merchant_id"] not in merchant_scope_ids(conn, user):
+                return self.send_json({"error": "จัดการได้เฉพาะร้านของตัวเอง"}, 403)
+            conn.execute(
+                "UPDATE menu_items SET deleted = 1, available = 0 WHERE id = ?",
+                (item_id,),
+            )
+            conn.commit()
+            return self.send_json({"ok": True})
+
         if parsed.path == "/api/merchant-profile":
             if user["role"] not in ("admin", "merchant"):
                 return self.send_json({"error": "ไม่มีสิทธิ์แก้ไขร้านค้า"}, 403)
             merchant_id = int(data.get("id") or user["merchantId"] or 0)
-            if user["role"] == "merchant" and merchant_id != user["merchantId"]:
+            if user["role"] == "merchant" and merchant_id not in merchant_scope_ids(conn, user):
                 return self.send_json({"error": "แก้ไขได้เฉพาะร้านของตัวเอง"}, 403)
             conn.execute(
                 """
                 UPDATE merchants
-                SET name = ?, category = ?, address = ?, location = ?, status = ?, eta = ?
+                SET name = ?, category = ?, address = ?, location = ?, latitude = ?, longitude = ?, status = ?, eta = ?
                 WHERE id = ?
                 """,
                 (
@@ -571,6 +755,8 @@ class Handler(SimpleHTTPRequestHandler):
                     data.get("category"),
                     data.get("address"),
                     data.get("location"),
+                    parse_optional_float(data.get("latitude")),
+                    parse_optional_float(data.get("longitude")),
                     data.get("status") or "open",
                     data.get("eta") or "25-35 นาที",
                     merchant_id,
@@ -579,6 +765,33 @@ class Handler(SimpleHTTPRequestHandler):
             conn.commit()
             merchant = conn.execute("SELECT * FROM merchants WHERE id = ?", (merchant_id,)).fetchone()
             return self.send_json({"merchant": merchant_row(merchant)})
+
+        if parsed.path == "/api/sub-merchants":
+            if user["role"] not in ("admin", "merchant"):
+                return self.send_json({"error": "ไม่มีสิทธิ์เพิ่มร้านค้าย่อย"}, 403)
+            parent_id = int(data.get("parentMerchantId") or user["merchantId"] or 0)
+            if user["role"] == "merchant" and parent_id != user["merchantId"]:
+                return self.send_json({"error": "เพิ่มร้านค้าย่อยได้เฉพาะร้านหลักของตัวเอง"}, 403)
+            cursor = conn.execute(
+                """
+                INSERT INTO merchants (parent_merchant_id, name, category, address, location, latitude, longitude, rating, status, eta)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 4.5, ?, ?)
+                """,
+                (
+                    parent_id,
+                    data.get("name"),
+                    data.get("category") or "ร้านอาหาร",
+                    data.get("address") or "ยังไม่ได้ระบุ",
+                    data.get("location") or "กรุงเทพฯ",
+                    parse_optional_float(data.get("latitude")),
+                    parse_optional_float(data.get("longitude")),
+                    data.get("status") or "open",
+                    data.get("eta") or "25-35 นาที",
+                ),
+            )
+            conn.commit()
+            merchant = conn.execute("SELECT * FROM merchants WHERE id = ?", (cursor.lastrowid,)).fetchone()
+            return self.send_json({"merchant": merchant_row(merchant)}, 201)
 
         if parsed.path == "/api/checkout":
             items = data.get("items", [])
@@ -589,8 +802,10 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({"error": "ประเภทการจ่ายเงินไม่ถูกต้อง"}, 400)
             ids = [int(item["id"]) for item in items]
             placeholders = ",".join("?" for _ in ids)
-            rows = conn.execute(f"SELECT * FROM menu_items WHERE id IN ({placeholders})", ids).fetchall()
+            rows = conn.execute(f"SELECT * FROM menu_items WHERE id IN ({placeholders}) AND available = 1 AND deleted = 0", ids).fetchall()
             lookup = {row["id"]: row for row in rows}
+            if len(lookup) != len(set(ids)):
+                return self.send_json({"error": "มีเมนูที่ไม่พร้อมขายหรือถูกลบแล้ว"}, 400)
             first = lookup[ids[0]]
             merchant_id = first["merchant_id"]
             subtotal = 0
@@ -603,17 +818,24 @@ class Handler(SimpleHTTPRequestHandler):
                 line_total = menu["price"] * quantity
                 subtotal += line_total
                 order_lines.append((menu, quantity, line_total))
+            payment_payload = None
+            if payment_method == "Card":
+                payment_status, payment_payload = create_octopus_payment()
+                if payment_status != 200:
+                    return self.send_json({"error": octopus_error_message(payment_payload)}, 400)
             delivery_fee = 20
             tx = conn.execute(
                 """
-                INSERT INTO transactions (merchant_id, user_id, customer_name, delivery_address, payment_method, subtotal, delivery_fee, total_amount, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'paid')
+                INSERT INTO transactions (merchant_id, user_id, customer_name, delivery_address, delivery_latitude, delivery_longitude, payment_method, subtotal, delivery_fee, total_amount, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid')
                 """,
                 (
                     merchant_id,
                     user["id"],
                     user["name"],
                     user["deliveryAddress"],
+                    user["latitude"],
+                    user["longitude"],
                     payment_method,
                     subtotal,
                     delivery_fee,
@@ -638,7 +860,14 @@ class Handler(SimpleHTTPRequestHandler):
                 """,
                 (transaction_id,),
             ).fetchone()
-            return self.send_json({"transaction": transaction_row(conn, row)}, 201)
+            response = {"transaction": transaction_row(conn, row)}
+            if payment_payload:
+                response["payment"] = {
+                    "redirectUrl": payment_payload.get("redirect_url"),
+                    "reference": payment_payload.get("reference"),
+                    "response": payment_payload,
+                }
+            return self.send_json(response, 201)
 
         self.send_json({"error": "ไม่พบ API"}, 404)
 

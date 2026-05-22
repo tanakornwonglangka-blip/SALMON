@@ -4,71 +4,95 @@ import { appState } from "../state.js";
 export function userPage(restaurants) {
   const selectedMerchant = restaurants.find((merchant) => String(merchant.id) === String(appState.selectedMerchantId)) || restaurants[0];
   if (selectedMerchant && appState.selectedMerchantId !== selectedMerchant.id) appState.selectedMerchantId = selectedMerchant.id;
+  const menuItems = selectedMerchant?.menuItems ?? [];
+  const totalMenus = restaurants.reduce((sum, merchant) => sum + merchant.menuItems.length, 0);
 
   return `
-    <section class="hero-section">
+    <section class="hero-section ordering-hero">
       <div class="hero-copy">
-        <p class="eyebrow">บริการสั่งอาหาร ZaabNua</p>
-        <h1>สั่งอาหารแซ่บจากร้านโปรดในไม่กี่คลิก</h1>
-        <p>ค้นหาร้าน เลือกเมนู ใส่ตะกร้า และพร้อมต่อระบบชำระเงินจริงได้ทันที</p>
-        <form class="hero-actions" data-form="search">
+        <p class="eyebrow">ZaabNua delivery</p>
+        <h1>เลือกเมนูแซ่บจากร้านใกล้ตัวได้เร็วขึ้น</h1>
+        <p>ค้นหาจากชื่อร้าน เมนู หรือย่าน แล้วเพิ่มอาหารลงตะกร้าได้จากการ์ดเมนูทันที</p>
+        <form class="hero-actions search-dock" data-form="search">
           <label class="search-box">
-            <span>ค้นหาร้านอาหาร</span>
-            <input name="search" data-input="restaurant-search" value="${appState.queryDraft}" placeholder="ค้นหาร้าน อาหาร เมนู หรือย่าน" />
+            <span>ค้นหาร้านหรือเมนู</span>
+            <input name="search" data-input="restaurant-search" value="${appState.queryDraft}" placeholder="เช่น ลาบ, ส้มตำ, ทองหล่อ" />
           </label>
           <button class="primary-button" type="submit">ค้นหา</button>
         </form>
+        <div class="quick-stats">
+          <span><strong>${restaurants.length}</strong> ร้าน</span>
+          <span><strong>${totalMenus}</strong> เมนูพร้อมสั่ง</span>
+          <span><strong>${selectedMerchant?.eta ?? "-"}</strong> จัดส่ง</span>
+        </div>
       </div>
-      <img class="hero-image" src="./assets/food-hero.jpg" alt="ชุดอาหารไทย" />
     </section>
 
     <section class="ordering-grid">
       <aside class="restaurant-list" aria-label="Restaurants">
-        <div class="section-title">
-          <p class="eyebrow">ร้านอาหาร</p>
-          <h2>ร้านอาหาร</h2>
+        <div class="section-title inline">
+          <div>
+            <p class="eyebrow">เลือกร้าน</p>
+            <h2>ร้านอาหาร</h2>
+          </div>
+          <span class="pill">${restaurants.length}</span>
         </div>
-        ${restaurants.map((merchant) => `
-          <article class="restaurant-card ${String(merchant.id) === String(selectedMerchant?.id) ? "selected" : ""}" data-action="select-merchant" data-merchant-id="${merchant.id}">
-            <span class="restaurant-status">${merchant.status === "open" ? "เปิด" : "คิวแน่น"}</span>
-            <strong>${merchant.name}</strong>
-            <small>${merchant.category} · ${merchant.location}</small>
-            <span>${merchant.rating} ★ · ${merchant.eta}</span>
-            <button class="detail-link" type="button" data-action="view-merchant" data-merchant-id="${merchant.id}">รายละเอียด</button>
-          </article>
-        `).join("")}
+        <div class="restaurant-list-scroll">
+          ${restaurants.map((merchant) => `
+            <article class="restaurant-card ${String(merchant.id) === String(selectedMerchant?.id) ? "selected" : ""}" data-action="select-merchant" data-merchant-id="${merchant.id}">
+              <div class="restaurant-card-top">
+                <span class="restaurant-status">${merchant.status === "open" ? "เปิด" : merchant.status === "busy" ? "คิวแน่น" : "ปิดร้าน"}</span>
+                <span>${merchant.rating} ★</span>
+              </div>
+              <strong>${merchant.name}</strong>
+              <small>${merchant.category} · ${merchant.location}</small>
+              <span>${merchant.eta} · ${merchant.menuItems.length} เมนู</span>
+              <button class="detail-link" type="button" data-action="view-merchant" data-merchant-id="${merchant.id}">รายละเอียดร้าน</button>
+            </article>
+          `).join("")}
+        </div>
       </aside>
 
       <section class="menu-panel">
+        <div class="merchant-feature">
+          <div>
+            <p class="eyebrow">กำลังเลือก</p>
+            <h2>${selectedMerchant?.name ?? "ไม่พบร้าน"}</h2>
+            <p>${selectedMerchant?.category ?? ""} · ${selectedMerchant?.location ?? ""} · ${selectedMerchant?.address ?? ""}</p>
+          </div>
+          <button class="ghost-button" type="button" data-action="view-merchant" data-merchant-id="${selectedMerchant?.id ?? ""}">ดูรายละเอียด</button>
+        </div>
         <div class="section-title inline">
           <div>
-            <p class="eyebrow">รายการอาหาร</p>
-            <h2>${selectedMerchant?.name ?? "ไม่พบร้าน"}</h2>
+            <p class="eyebrow">เมนูพร้อมสั่ง</p>
+            <h2>รายการอาหาร</h2>
           </div>
-          <span class="pill">${selectedMerchant?.category ?? ""}</span>
+          <span class="pill">${menuItems.length} เมนู</span>
         </div>
         <div class="menu-grid">
-          ${(selectedMerchant?.menuItems ?? []).map((item) => `
+          ${menuItems.length ? menuItems.map((item) => `
             <article class="menu-card" data-action="view-menu" data-item-id="${item.id}">
               ${item.imageUrl1
                 ? `<img class="food-thumb image" src="${item.imageUrl1}" alt="${item.name}" />`
                 : `<div class="food-thumb">${item.name.slice(0, 1)}</div>`}
               <div class="menu-card-body">
                 <strong>${item.name}</strong>
+                <p>${item.description || "เมนูแนะนำจากร้าน"}</p>
                 <span>${formatCurrency(item.price)}</span>
               </div>
               <div class="menu-card-footer">
-                <small class="card-hint">กดเพื่อดูรายละเอียด</small>
-                <button class="icon-button cart-add-button" title="เพิ่มลงตะกร้า" data-action="add-cart" data-item-id="${item.id}" aria-label="เพิ่ม ${item.name} ลงตะกร้า">
+                <button class="ghost-button" type="button" data-action="view-menu" data-item-id="${item.id}">รายละเอียด</button>
+                <button class="primary-button add-cart-inline" type="button" data-action="add-cart" data-item-id="${item.id}" aria-label="เพิ่ม ${item.name} ลงตะกร้า">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M6.4 6.5h14.1l-1.6 8.1a2 2 0 0 1-2 1.6H9.2a2 2 0 0 1-2-1.6L5.6 3.8H3.5" />
                     <path d="M9.6 20.2h.1" />
                     <path d="M17 20.2h.1" />
                   </svg>
+                  เพิ่ม
                 </button>
               </div>
             </article>
-          `).join("")}
+          `).join("") : `<p class="empty-state">ไม่พบเมนูในร้านนี้</p>`}
         </div>
       </section>
     </section>
@@ -77,6 +101,9 @@ export function userPage(restaurants) {
 
 export function cartDrawer() {
   const cartCount = appState.cart.reduce((total, item) => total + item.quantity, 0);
+  const subtotal = calculateCartTotal(appState.cart);
+  const deliveryFee = appState.cart.length ? 20 : 0;
+  const totalAmount = subtotal + deliveryFee;
   const paymentOptions = [
     {
       value: "เงินสด",
@@ -126,8 +153,18 @@ export function cartDrawer() {
         `).join("") : `<p class="empty-state">เลือกเมนูเพื่อเริ่มสั่งอาหาร</p>`}
       </div>
       <div class="cart-total">
-        <span>รวม</span>
-        <strong>${formatCurrency(calculateCartTotal(appState.cart))}</strong>
+        <div>
+          <span>ค่าอาหาร</span>
+          <strong>${formatCurrency(subtotal)}</strong>
+        </div>
+        <div>
+          <span>ค่าจัดส่ง</span>
+          <strong>${formatCurrency(deliveryFee)}</strong>
+        </div>
+        <div class="cart-grand-total">
+          <span>รวมทั้งหมด</span>
+          <strong>${formatCurrency(totalAmount)}</strong>
+        </div>
       </div>
       <fieldset class="payment-options">
         <legend>เลือกประเภทการจ่าย</legend>

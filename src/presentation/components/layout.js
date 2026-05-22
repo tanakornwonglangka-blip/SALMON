@@ -4,9 +4,11 @@ import { appState } from "../state.js";
 export function shell(content) {
   const user = appState.user;
   const cartCount = appState.cart.reduce((total, item) => total + item.quantity, 0);
-  const showCartButton = appState.route === "user" && user?.role === Roles.USER;
+  const showCartButton = user?.role === Roles.USER;
+  const roleLabel = user?.role === Roles.ADMIN ? "ผู้ดูแลระบบ" : user?.role === Roles.MERCHANT ? "ผู้ดูแลร้าน" : "ผู้สั่งอาหาร";
   const navItems = [
     { route: "user", label: "สั่งอาหาร", roles: [Roles.USER, null] },
+    { route: "history", label: "ประวัติ", roles: [Roles.USER] },
     { route: "portal", label: "ภาพรวม", roles: [Roles.ADMIN, Roles.MERCHANT] },
     { route: "merchant", label: "จัดการร้าน", roles: [Roles.ADMIN, Roles.MERCHANT] }
   ].filter((item) => item.roles.includes(user?.role ?? null));
@@ -15,11 +17,7 @@ export function shell(content) {
   return `
     <header class="topbar">
       <a class="brand" href="#/${homeRoute}" aria-label="กลับหน้าหลัก ZaabNua">
-        <span class="brand-mark">Z</span>
-        <span>
-          <strong>ZaabNua</strong>
-          <small>สั่งง่าย จัดการร้านคล่อง</small>
-        </span>
+        <img class="brand-logo" src="./assets/zaabnua-logo.svg" alt="ZaabNua" />
       </a>
       <nav class="nav-tabs" aria-label="เมนูหลัก">
         ${navItems.map((item) => `
@@ -38,8 +36,20 @@ export function shell(content) {
           </button>
         ` : ""}
         ${user ? `
-          <button class="account-name" data-action="open-user-detail">${user.name}</button>
-          <button class="ghost-button" data-action="logout">ออกจากระบบ</button>
+          <div class="profile-menu">
+            <button class="profile-trigger" type="button" data-action="toggle-profile-menu" aria-expanded="false">
+              <span class="profile-avatar" aria-hidden="true"></span>
+              <span class="profile-copy">
+                <strong>${user.name}</strong>
+                <small>${roleLabel}</small>
+              </span>
+              <span class="profile-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div class="profile-dropdown" data-profile-menu hidden>
+              <button type="button" data-action="open-user-detail">โปรไฟล์ผู้ใช้งาน</button>
+              <button type="button" data-action="logout">ออกจากระบบ</button>
+            </div>
+          </div>
         ` : `
           <button class="ghost-button compact" data-action="open-register">สมัครสมาชิก</button>
           <button class="primary-button compact" data-action="open-login">เข้าสู่ระบบ</button>
@@ -47,6 +57,21 @@ export function shell(content) {
       </div>
     </header>
     <main>${content}</main>
+  `;
+}
+
+export function mapPicker({ latitude = "", longitude = "", label = "ปักหมุดบนแผนที่", prefix = "" } = {}) {
+  const lat = latitude ?? "";
+  const lng = longitude ?? "";
+  return `
+    <button class="map-open-button" type="button" data-action="open-map-picker" data-lat-input="${prefix}latitude" data-lng-input="${prefix}longitude" data-map-label="${label}">
+      <strong>${label}</strong>
+      <small>${lat && lng ? `${lat}, ${lng}` : "กดเพื่อเลือกตำแหน่งจากแผนที่"}</small>
+    </button>
+    <div class="form-row compact">
+      <label>Latitude <input name="${prefix}latitude" value="${lat}" inputmode="decimal" /></label>
+      <label>Longitude <input name="${prefix}longitude" value="${lng}" inputmode="decimal" /></label>
+    </div>
   `;
 }
 

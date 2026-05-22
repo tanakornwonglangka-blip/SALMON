@@ -30,10 +30,19 @@ export function createApiClient(authRepository) {
     getPortalData: () => request("/api/portal"),
     getMerchantManagementData: () => request("/api/merchant-management"),
     getUsers: () => request("/api/users"),
+    getHistory: () => request("/api/history"),
     searchRestaurants: (query) => request(`/api/restaurants?search=${encodeURIComponent(query || "")}`),
     saveMenuItem: (item) => request("/api/menu-items", {
       method: "POST",
       body: JSON.stringify(item)
+    }),
+    deleteMenuItem: (id) => request("/api/menu-items/delete", {
+      method: "POST",
+      body: JSON.stringify({ id })
+    }),
+    saveSubMerchant: (merchant) => request("/api/sub-merchants", {
+      method: "POST",
+      body: JSON.stringify(merchant)
     }),
     updateMerchant: (merchant) => request("/api/merchant-profile", {
       method: "POST",
@@ -46,6 +55,11 @@ export function createApiClient(authRepository) {
     checkout: (items, paymentMethod) => request("/api/checkout", {
       method: "POST",
       body: JSON.stringify({ items, paymentMethod })
-    })
+    }),
+    checkPaymentRedirect: (url) => request("/api/payment-redirect-check", {
+      method: "POST",
+      body: JSON.stringify({ url })
+    }),
+    getPaymentStatus: (transactionId) => request(`/api/payments/${transactionId}/status`)
   };
 }
